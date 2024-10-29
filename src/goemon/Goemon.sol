@@ -4,6 +4,11 @@ pragma solidity 0.8.17;
 import "../interfaces/ISignatureTransfer.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
+interface IAcrossBridge {
+    function send(address token, uint256 amount, address receiver, uint256 destinationChainId, uint256 relayerFeePct)
+        external;
+}
+
 contract Goemon {
     struct Intent {
         address token;
@@ -15,13 +20,18 @@ contract Goemon {
 
     ISignatureTransfer public immutable permit2;
     uint256 private s_countIntents = 0;
-
+    address public usdcToken; // USDC token address on Ethereum
+    IAcrossBridge public acrossBridge; // Across Bridge contract address
     mapping(address => mapping(uint256 => Intent)) public userIntents;
 
-    constructor(address permit2Address) {
+    constructor(address permit2Address, address _usdcToken, address _acrossBridge) {
         // Initialize Permit2 contract instance
         permit2 = ISignatureTransfer(permit2Address);
+        usdcToken = _usdcToken;
+        acrossBridge = IAcrossBridge(_acrossBridge);
     }
+
+    event TransferInitiated(address indexed sender, address indexed receiver, uint256 amount, uint256 chainId);
 
     event PermitTransfer(address indexed token, address indexed owner, address indexed receiver, uint256 amount);
     event IntentCreated(
@@ -134,5 +144,12 @@ contract Goemon {
         // Execute the permit transfer
         permit2.permitTransferFrom(permit, transferDetails, msg.sender, sig);
         emit PermitTransfer(token, msg.sender, receiver, amount);
+    }
+
+    function transferUSDCToOptimism(address receiver, uint256 amount, uint256 relayerFeePct) external {
+        require(amount > 0, "Amount must be greater than zero");
+
+        // Transfer USDC using the Across Bridge
+        acrossBridge.send(usdcToken, amount, receiver, 10, relayerFeePct); // Chain ID 10 for Optimism
     }
 }
